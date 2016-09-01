@@ -5,9 +5,9 @@
 extern char **environ;
 #define MAXSTRING 128
 #define BASESTR "SMA_SYMMETRIC_PARTITION"
+#define BASESTR2 "SHMEM_SYMMETRIC_PARTITION"
 
 struct HBM{
-
     unsigned int part_id;
     unsigned int kind;
     unsigned int pgsize;
@@ -19,7 +19,7 @@ struct HBM{
 int main(int argc, const char * argv[]){
 
     char **env;
-    size_t nbase,nrhs;
+    size_t nbase,nrhs,nbase2;
     char *firsteq;
     char num[4];
     char rhs[MAXSTRING];
@@ -34,10 +34,11 @@ int main(int argc, const char * argv[]){
 
      env = environ;
      nbase = strlen(BASESTR);
+     nbase2 = strlen(BASESTR2);
 
      while(*env != NULL){
 
-         if (strncmp(*env, BASESTR, nbase) == 0){
+         if (strncmp(*env, BASESTR, nbase) == 0 || strncmp(*env, BASESTR2, nbase2) == 0){
 
              firsteq = strchr(*env,'=');
 
@@ -133,8 +134,10 @@ int main(int argc, const char * argv[]){
 
 
          env++;
+         if (i>max){
+             printf("Max partitions reached\n");
+             break;
+         }
     }
-
 }
-
 
