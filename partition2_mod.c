@@ -40,12 +40,20 @@ int main(int argc, const char * argv[]){
 
          if (strncmp(*env, BASESTR, nbase) == 0 || strncmp(*env, BASESTR2, nbase2) == 0){
 
-             firsteq = strchr(*env,'=');
+            if (strncmp(*env,BASESTR,nbase) == 0){
+                firsteq = strchr(*env,'=');
 
-             nn = firsteq - *env - nbase;
+                nn = firsteq - *env - nbase;
 
-             strncpy(num, *env+nbase, nn);
+                strncpy(num, *env+nbase, nn);
+             }
+            else{
+                firsteq = strchr(*env,'=');
 
+                nn = firsteq - *env - nbase2;
+
+                strncpy(num, *env+nbase2, nn);
+            }
              num[nn] = '\0';
 
              nrhs = strlen(firsteq+1);
