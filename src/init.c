@@ -56,6 +56,15 @@ int shmem_internal_global_exit_called = 0;
 int shmem_internal_thread_level;
 int shmem_internal_debug = 0;
 
+#ifdef SHMEM_HETEROMEM_H
+extern char **environ;
+#define MAXSTRING 128
+#define BASESTR "SMA_SYMMETRIC_PARTITION"
+#define BASESTR2 "SHMEM_SYMMETRIC_PARTITION"
+shmem_partition_t symheap_partition[SHM_INTERNAL_MAX_PARTITIONS] = {{ 0 }};
+int shmem_internal_defined_partitions = 0;
+#endif
+
 #ifdef ENABLE_THREADS
 shmem_internal_mutex_t shmem_internal_mutex_alloc;
 #endif
@@ -111,6 +120,31 @@ shmem_internal_shutdown_atexit(void)
     shmem_internal_shutdown(0);
 }
 
+static long
+atol_scaled(char *s)
+{
+    long val;
+    char *e;
+    errno = 0;
+
+    val = strtol(s,&e,0);
+    if(errno != 0 || e == s) {
+        shmem_runtime_abort(1, "env var conversion");
+    }
+    if (e == NULL || *e =='\0')
+        return val;
+
+    if (*e == 'K')
+        val *= 1024L;
+    else if (*e == 'M')
+        val *= 1024L*1024L;
+    else if (*e == 'G')
+        val *= 1024L*1024L*1024L;
+    else if (*e == 'T')
+        val *= 1024L*1024L*1024L*1024L;
+
+    return val;
+}
 
 void
 shmem_internal_start_pes(int npes)
@@ -174,6 +208,8 @@ shmem_internal_init(int tl_requested, int *tl_provided)
                                                                     2 * 1024 * 1024);
     }
 #endif
+
+    shmem_internal_parse_partition_env();
 
     /* Find symmetric data */
 #ifdef __APPLE__
@@ -407,4 +443,124 @@ shmem_internal_global_exit(int status)
 
     shmem_internal_global_exit_called = 1;
     shmem_runtime_abort(status, str);
+}
+
+
+void shmem_internal_parse_partition_env(void)
+{
+    char **env;
+    char rhs[MAXSTRING];
+
+    env = environ;
+
+    size_t nbase,nrhs,nbase2;
+    char *firsteq;
+    char num[4];
+    size_t nn;
+    char *token1, *token2;
+    char *st1 = NULL, *st2 = NULL;
+    int i = 1;
+    int max = 7;
+
+    env = environ;
+    nbase = strlen(BASESTR);
+    nbase2 = strlen(BASESTR2);
+
+    while(*env != NULL){
+
+        if (strncmp(*env, BASESTR, nbase) == 0 || strncmp(*env, BASESTR2, nbase2) == 0){
+
+            if (strncmp(*env,BASESTR,nbase) == 0){
+                firsteq = strchr(*env,'=');
+                nn = firsteq - *env - nbase;
+                strncpy(num, *env+nbase, nn);
+            }
+            else{
+                firsteq = strchr(*env,'=');
+                nn = firsteq - *env - nbase2;
+                strncpy(num, *env+nbase2, nn);
+            }
+            num[nn] = '\0';
+
+            nrhs = strlen(firsteq+1);
+            strncpy(rhs,firsteq+1,nrhs);
+            rhs[nrhs] = '\0';
+
+            symheap_partition[i].id = atoi(num);
+            /* printf("PartID%d: %d\n",i,partition[i].part_id); */
+
+
+            token1 = strtok_r(rhs,":",&st1);
+            while(token1 != NULL){
+
+                symheap_partition[i].kind = KIND_DEFAULT;
+                symheap_partition[i].policy = POLICY_DEFAULT;
+                symheap_partition[i].pgsize = 4096;
+                symheap_partition[i].start_address = NULL;
+                symheap_partition[i].mspace = NULL;
+
+
+                token2 = strtok_r(token1,"=",&st2);
+                if (strstr(token1,"size") != NULL){
+                    token2 = strtok_r(NULL, "=", &st2);
+                    symheap_partition[i].size = atol_scaled(token2);
+
+                } else if (strstr(token1,"kind") != NULL){
+
+                    token2 = strtok_r(NULL, "=", &st2);
+
+                    if(strncmp(token2,"F",1) == 0){
+                        symheap_partition[i].kind = KIND_FASTMEM;
+                    }
+                    else if(strncmp(token2,"D",1) == 0){
+
+                        symheap_partition[i].kind = KIND_DEFAULT;
+                    }
+                    else{
+                        printf("Error, wrong input for kind value\n");
+                    }
+
+                } else if (strstr(token1,"policy") != NULL) {
+
+                    token2 = strtok_r(NULL, "=", &st2);
+                    if(strncmp(token2,"D",1) == 0){
+                        symheap_partition[i].policy = POLICY_DEFAULT;
+                    }
+
+                }
+
+                else if (strstr(token1,"pgsz") != NULL){
+
+                    token2 = strtok_r(NULL, "=",&st2);
+                    symheap_partition[i].pgsize = atol_scaled(token2);
+                }
+
+                else {
+
+                    printf("Error\n");
+                }
+
+                token1 = strtok_r(NULL, ":", &st1);
+            }
+
+            if (shmem_internal_debug > 0)
+            {
+                fprintf(stdout,"Debug: shmem_internal_parse_partition_env \n");
+                fprintf(stdout,"Debug: SHMEM_SYMMETRIC_PARTIION = %s\n", *env);
+                shmem_partition_print_info(&symheap_partition[i]);
+            }
+
+            i++;
+
+            printf("\n\n");
+        }
+        env++;
+        if (i>max){
+            printf("Max partitions reached\n");
+            break;
+        }
+
+        shmem_internal_defined_partitions = i;
+
+    }
 }
