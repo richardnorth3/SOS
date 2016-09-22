@@ -36,6 +36,8 @@ extern int shmem_internal_debug;
                 shmem_internal_my_pe, __FILE__, __LINE__, (int) ret);   \
     } while(0)
 
+extern shmem_partition_t symheap_partition[SHM_INTERNAL_MAX_PARTITIONS];
+extern int shmem_internal_defined_partitions;
 
 #define RAISE_ERROR(ret)                                                \
     do {                                                                \
