@@ -13,6 +13,7 @@
 #ifndef PORTALS_SHMEM_INTERNAL_H
 #define PORTALS_SHMEM_INTERNAL_H
 
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -29,6 +30,13 @@ extern int shmem_internal_finalized;
 extern int shmem_internal_thread_level;
 extern int shmem_internal_debug;
 
+#define RAISE_WARN(ret)                                                 \
+    do {                                                                \
+        fprintf(stderr, "[%03d] WARN: %s:%d return code %d\n",         \
+                shmem_internal_my_pe, __FILE__, __LINE__, (int) ret);   \
+    } while(0)
+
+
 #define RAISE_ERROR(ret)                                                \
     do {                                                                \
         fprintf(stderr, "[%03d] ERROR: %s:%d return code %d\n",         \
@@ -44,6 +52,20 @@ extern int shmem_internal_debug;
         shmem_runtime_abort(1, PACKAGE_NAME " exited in error");        \
     } while (0)
 
+
+#define RAISE_WARN_STR(str)                                             \
+    do {                                                                \
+        fprintf(stderr, "[%03d] WARN: %s:%d: %s\n",                    \
+                shmem_internal_my_pe, __FILE__, __LINE__, str);         \
+    } while (0)
+
+#define DEBUG_STR(str)                                                  \
+    do {                                                                \
+        if(shmem_internal_debug) {                                      \
+            fprintf(stderr, "[%03d] DEBUG: %s:%d: %s\n",                \
+                    shmem_internal_my_pe, __FILE__, __LINE__, str);     \
+        }                                                               \
+    } while(0)
 
 #ifdef ENABLE_ERROR_CHECKING
 #define SHMEM_ERR_CHECK_INITIALIZED()                                   \

@@ -29,12 +29,8 @@
 #include <unistd.h>
 #include <stddef.h>
 
-extern struct fid_fabric*       	shmem_transport_ofi_fabfd;
-extern struct fid_domain*          	shmem_transport_ofi_domainfd;
 extern struct fid_ep*			shmem_transport_ofi_epfd;
 extern struct fid_ep*			shmem_transport_ofi_cntr_epfd;
-extern struct fid_stx*  		shmem_transport_ofi_stx;
-extern struct fid_av*             	shmem_transport_ofi_avfd;
 extern struct fid_cq*              	shmem_transport_ofi_put_nb_cqfd;
 #ifndef ENABLE_HARD_POLLING
 extern struct fid_cntr*            	shmem_transport_ofi_target_cntrfd;
@@ -54,7 +50,6 @@ extern uint64_t 	       	 	shmem_transport_ofi_pending_get_counter;
 extern uint64_t				shmem_transport_ofi_pending_cq_count;
 extern uint64_t				shmem_transport_ofi_max_poll;
 extern size_t          		 	shmem_transport_ofi_max_buffered_send;
-extern size_t    		 	shmem_transport_ofi_max_atomic_size;
 extern size_t    			shmem_transport_ofi_max_msg_size;
 extern size_t    			shmem_transport_ofi_bounce_buffer_size;
 
@@ -661,7 +656,6 @@ shmem_transport_atomic_small(void *target, const void *source, size_t len,
 
         shmem_transport_ofi_get_mr(target, pe, &addr, &key);
 
-        shmem_internal_assert(SHMEM_Dtsize[datatype] <= shmem_transport_ofi_max_atomic_size);
         shmem_internal_assert(SHMEM_Dtsize[datatype] == len);
 
 	do {
@@ -693,7 +687,6 @@ shmem_transport_atomic_set(void *target, const void *source, size_t len,
 
     shmem_transport_ofi_get_mr(target, pe, &addr, &key);
 
-    shmem_internal_assert(SHMEM_Dtsize[datatype] <= shmem_transport_ofi_max_atomic_size);
     shmem_internal_assert(SHMEM_Dtsize[datatype] == len);
 
     do {
@@ -725,7 +718,6 @@ shmem_transport_atomic_fetch(void *target, const void *source, size_t len,
 
     shmem_transport_ofi_get_mr(source, pe, &addr, &key);
 
-    shmem_internal_assert(SHMEM_Dtsize[datatype] <= shmem_transport_ofi_max_atomic_size);
     shmem_internal_assert(SHMEM_Dtsize[datatype] == len);
 
     do {
@@ -759,12 +751,24 @@ shmem_transport_atomic_nb(void *target, const void *source, size_t full_len,
 	uint64_t polled = 0;
         uint64_t key;
         uint8_t *addr;
+	size_t max_atomic_size = 0;
 
         shmem_internal_assert(SHMEM_Dtsize[datatype] * len == full_len);
 
+	ret = fi_atomicvalid(shmem_transport_ofi_epfd, datatype, op,
+				&max_atomic_size);
+	max_atomic_size = max_atomic_size * SHMEM_Dtsize[datatype];
+	if (max_atomic_size > shmem_transport_ofi_max_msg_size
+		|| ret || max_atomic_size == 0) {
+		OFI_ERRMSG("atomic_nb error: datatype %d x op %d not supported\n",
+                    datatype, op);
+		RAISE_ERROR(-1);
+	}
+
         shmem_transport_ofi_get_mr(target, pe, &addr, &key);
 
-	if ( full_len <= shmem_transport_ofi_max_buffered_send) {
+	if ( full_len <= MIN(shmem_transport_ofi_max_buffered_send,
+        max_atomic_size)) {
 
 		polled = 0;
 
@@ -782,8 +786,7 @@ shmem_transport_atomic_nb(void *target, const void *source, size_t full_len,
 		shmem_transport_ofi_pending_put_counter++;
 
         } else if (full_len <=
-			MIN(shmem_transport_ofi_bounce_buffer_size,
-				shmem_transport_ofi_max_atomic_size)) {
+			MIN(shmem_transport_ofi_bounce_buffer_size, max_atomic_size)) {
 
 			shmem_transport_ofi_bounce_buffer_t *buff = create_bounce_buffer(source, full_len);
 
@@ -810,8 +813,7 @@ shmem_transport_atomic_nb(void *target, const void *source, size_t full_len,
 		while (sent < len) {
 
 			size_t chunksize = MIN((len-sent),
-				(shmem_transport_ofi_max_atomic_size/SHMEM_Dtsize[datatype]));
-
+				(max_atomic_size/SHMEM_Dtsize[datatype]));
 			polled = 0;
 		do {
 			ret = fi_atomic(shmem_transport_ofi_cntr_epfd,
