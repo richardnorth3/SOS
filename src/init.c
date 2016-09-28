@@ -466,7 +466,15 @@ void shmem_internal_parse_partition_env(void)
     nbase = strlen(BASESTR);
     nbase2 = strlen(BASESTR2);
 
-    while(*env != NULL){
+    for (i = 0; i < 8; i++) {
+        symheap_partition[i].kind = KIND_DEFAULT;
+        symheap_partition[i].policy = POLICY_DEFAULT;
+        symheap_partition[i].pgsize = 4096;
+        symheap_partition[i].start_address = NULL;
+        symheap_partition[i].mspace = NULL;
+    }
+
+    for (i = 1; *env != NULL; ) {
 
         if (strncmp(*env, BASESTR, nbase) == 0 || strncmp(*env, BASESTR2, nbase2) == 0){
 
@@ -486,26 +494,30 @@ void shmem_internal_parse_partition_env(void)
             strncpy(rhs,firsteq+1,nrhs);
             rhs[nrhs] = '\0';
 
+            if (atoi(num) > 127 || atoi(num) < 1 || atoi(num) == 0){
+                fprintf(stderr,"ERROR: Partition ID (%d) is not in range of 1-127\n",atoi(num));
+               abort();
+            }
+
             symheap_partition[i].id = atoi(num);
             /* printf("PartID%d: %d\n",i,partition[i].part_id); */
 
 
             token1 = strtok_r(rhs,":",&st1);
+            if (strncmp(token1,"size",4) != 0){
+                fprintf(stderr,"ERROR: No size is defined for environment variable: %d\n",atoi(num));
+               abort();
+            }
             while(token1 != NULL){
 
-                symheap_partition[i].kind = KIND_DEFAULT;
-                symheap_partition[i].policy = POLICY_DEFAULT;
-                symheap_partition[i].pgsize = 4096;
-                symheap_partition[i].start_address = NULL;
-                symheap_partition[i].mspace = NULL;
-
-
                 token2 = strtok_r(token1,"=",&st2);
-                if (strstr(token1,"size") != NULL){
+
+                if (strncmp(token1,"size",4) == 0){
                     token2 = strtok_r(NULL, "=", &st2);
                     symheap_partition[i].size = atol_scaled(token2);
+                }
 
-                } else if (strstr(token1,"kind") != NULL){
+                else if (strstr(token1,"kind") != NULL){
 
                     token2 = strtok_r(NULL, "=", &st2);
 
@@ -517,19 +529,31 @@ void shmem_internal_parse_partition_env(void)
                         symheap_partition[i].kind = KIND_DEFAULT;
                     }
                     else{
-                        printf("Error, wrong input for kind value\n");
-                    }
-
-                } else if (strstr(token1,"policy") != NULL) {
-
-                    token2 = strtok_r(NULL, "=", &st2);
-                    if(strncmp(token2,"D",1) == 0){
-                        symheap_partition[i].policy = POLICY_DEFAULT;
+                        fprintf(stderr,"ERROR: incorrect kind value for environment variable: %d\n",atoi(num));
+                        abort();
                     }
 
                 }
 
-                else if (strstr(token1,"pgsz") != NULL){
+                else if (strstr(token1,"policy") != NULL) {
+
+                    token2 = strtok_r(NULL, "=", &st2);
+                    if(strncmp(token2,"M",1) == 0){
+                        symheap_partition[i].policy = POLICY_DEFAULT;
+                    }
+                    else if(strncmp(token2,"P",1) == 0){
+                        symheap_partition[i].policy = POLICY_POLICY1;
+                    }
+                    else if(strncmp(token2,"I",1) == 0){
+                        symheap_partition[i].policy = POLICY_INTERLEAVED;
+                    }
+                    else{
+                        fprintf(stderr,"ERROR: incorrect policy value for environment variable: %d\n",atoi(num));
+                        abort();
+                    }
+                }
+
+                else if (strncmp(token1,"pgsize",6) == 0){
 
                     token2 = strtok_r(NULL, "=",&st2);
                     symheap_partition[i].pgsize = atol_scaled(token2);
@@ -537,12 +561,16 @@ void shmem_internal_parse_partition_env(void)
 
                 else {
 
-                    printf("Error\n");
+                    fprintf(stderr,"ERROR: No values detected\n");
+                    abort();
                 }
 
                 token1 = strtok_r(NULL, ":", &st1);
             }
-
+            if (i>max){
+                fprintf(stderr,"WARNING: Max partitions reached\n");
+                abort();
+            }
             if (shmem_internal_debug > 0)
             {
                 fprintf(stdout,"Debug: shmem_internal_parse_partition_env \n");
@@ -555,10 +583,6 @@ void shmem_internal_parse_partition_env(void)
             printf("\n\n");
         }
         env++;
-        if (i>max){
-            printf("Max partitions reached\n");
-            break;
-        }
 
         shmem_internal_defined_partitions = i;
 
